@@ -1,143 +1,125 @@
 """
-Módulo de Síntesis de Voz para Alertas
-Utiliza pyttsx3 para generación de voz local
+Módulo de Síntesis de Voz - VERSIÓN ROBUSTA
+Reinicia el motor entre mensajes para mayor confiabilidad
 """
 
 import pyttsx3
 import time
 
-class AsistenteVoz:
+class AsistenteVozRobusto:
     def __init__(self):
-        """
-        Inicializa el motor de síntesis de voz
-        """
-        try:
-            self.engine = pyttsx3.init()
-            
-            # Configurar propiedades
-            self.engine.setProperty('rate', 150)    # Velocidad
-            self.engine.setProperty('volume', 1.0)  # Volumen
-            
-            print("✓ Asistente de voz inicializado")
-        except Exception as e:
-            print(f"⚠️ Error inicializando voz: {e}")
-            self.engine = None
+        """Inicializa configuración de voz"""
+        self.velocidad = 150
+        self.volumen = 1.0
+        print("✓ Asistente de voz inicializado (modo robusto)")
     
-    def hablar(self, texto, esperar=True):
+    def hablar(self, texto):
         """
-        Convierte texto a voz
+        Convierte texto a voz con motor independiente
         """
-        if self.engine is None:
-            print(f"[VOZ DESHABILITADA] {texto}")
-            return
-        
         try:
             print(f"🔊 Diciendo: {texto}")
-            self.engine.say(texto)
-            if esperar:
-                self.engine.runAndWait()
+            
+            # Crear motor nuevo para cada mensaje
+            engine = pyttsx3.init()
+            engine.setProperty('rate', self.velocidad)
+            engine.setProperty('volume', self.volumen)
+            
+            # Hablar
+            engine.say(texto)
+            engine.runAndWait()
+            
+            # Limpiar
+            engine.stop()
+            del engine
+            
+            # Pausa entre mensajes
+            time.sleep(0.5)
+            
         except Exception as e:
-            print(f"❌ Error en síntesis de voz: {e}")
+            print(f"❌ Error: {e}")
     
     # ========================================
     # MENSAJES DEL SISTEMA
     # ========================================
     
     def bienvenida(self):
-        """Mensaje de bienvenida"""
         self.hablar("Bienvenido al sistema de salud ocupacional. Tu sesión ha comenzado.")
     
     def alerta_co2_alto(self, valor):
-        """Alerta de CO2 elevado"""
-        mensaje = f"Atención. Nivel de dióxido de carbono elevado: {valor} partes por millón. "\
-                  "Se recomienda mejorar la ventilación."
-        self.hablar(mensaje)
+        self.hablar(f"Atención. Nivel de dióxido de carbono elevado: {valor} partes por millón.")
+        time.sleep(1)
+        self.hablar("Se recomienda mejorar la ventilación.")
     
     def alerta_ruido_alto(self, valor):
-        """Alerta de ruido elevado"""
-        mensaje = f"Nivel de ruido elevado: {valor} decibeles. "\
-                  "Considera utilizar audífonos con cancelación de ruido."
-        self.hablar(mensaje)
+        self.hablar(f"Nivel de ruido elevado: {valor} decibeles.")
+        time.sleep(1)
+        self.hablar("Considera utilizar audífonos con cancelación de ruido.")
     
     def recordatorio_pausa(self, minutos):
-        """Recordatorio de tomar pausa"""
-        mensaje = f"Has trabajado {minutos} minutos sin descanso. "\
-                  "Es momento de tomar una pausa de cinco minutos."
-        self.hablar(mensaje)
+        self.hablar(f"Has trabajado {minutos} minutos sin descanso.")
+        time.sleep(1)
+        self.hablar("Es momento de tomar una pausa de cinco minutos.")
     
     def alerta_fatiga_visual(self):
-        """Alerta de fatiga visual"""
-        mensaje = "Se han detectado signos de fatiga visual. "\
-                  "Descansa la vista mirando a lo lejos durante veinte segundos."
-        self.hablar(mensaje)
+        self.hablar("Se han detectado signos de fatiga visual.")
+        time.sleep(1)
+        self.hablar("Descansa la vista mirando a lo lejos durante veinte segundos.")
     
     def alerta_fatiga_postural(self):
-        """Alerta de fatiga postural"""
-        mensaje = "Tu postura no es correcta. "\
-                  "Ajusta tu posición y realiza algunos estiramientos."
-        self.hablar(mensaje)
+        self.hablar("Tu postura no es correcta.")
+        time.sleep(1)
+        self.hablar("Ajusta tu posición y realiza algunos estiramientos.")
     
     def despedida(self, minutos_totales):
-        """Mensaje de despedida"""
-        mensaje = f"Sesión finalizada. Has trabajado {minutos_totales} minutos. "\
-                  "Que tengas un excelente día."
-        self.hablar(mensaje)
+        self.hablar(f"Sesión finalizada. Has trabajado {minutos_totales} minutos.")
+        time.sleep(1)
+        self.hablar("Que tengas un excelente día.")
     
     # ========================================
     # GUÍAS DE EJERCICIOS
     # ========================================
     
     def guiar_ejercicio_20_20_20(self):
-        """
-        Guía el ejercicio visual 20-20-20
-        """
-        print("\n🎯 Iniciando ejercicio visual 20-20-20")
+        print("\n🎯 Iniciando ejercicio visual 20-20-20\n")
         
-        pasos = [
-            "Ejercicio visual veinte, veinte, veinte.",
-            "Aparta la mirada de la pantalla.",
-            "Busca un objeto a seis metros de distancia.",
-            "Concéntrate en ese objeto durante veinte segundos.",
-            "Perfecto. Ejercicio completado."
-        ]
+        self.hablar("Ejercicio visual veinte, veinte, veinte.")
+        time.sleep(2)
         
-        for paso in pasos:
-            self.hablar(paso, esperar=True)
-            if "veinte segundos" in paso:
-                print("   [Esperando 20 segundos...]")
-                time.sleep(20)
-            else:
-                time.sleep(2)
+        self.hablar("Aparta la mirada de la pantalla.")
+        time.sleep(2)
+        
+        self.hablar("Busca un objeto a seis metros de distancia.")
+        time.sleep(2)
+        
+        self.hablar("Concéntrate en ese objeto durante veinte segundos.")
+        print("   [Esperando 20 segundos...]")
+        time.sleep(20)
+        
+        self.hablar("Perfecto. Ejercicio completado.")
     
     def guiar_estiramiento_cuello(self):
-        """
-        Guía estiramiento de cuello
-        """
-        print("\n🎯 Iniciando estiramiento de cuello")
+        print("\n🎯 Iniciando estiramiento de cuello\n")
         
-        pasos = [
-            "Estiramiento de cuello.",
-            "Inclina lentamente tu cabeza hacia el hombro derecho.",
-            "Mantén cinco segundos.",
-            "Regresa al centro.",
-            "Ahora inclina hacia el hombro izquierdo.",
-            "Mantén cinco segundos.",
-            "Regresa al centro. Ejercicio completado."
-        ]
+        self.hablar("Estiramiento de cuello.")
+        time.sleep(2)
         
-        for paso in pasos:
-            self.hablar(paso, esperar=True)
-            if "cinco segundos" in paso:
-                time.sleep(5)
-            else:
-                time.sleep(2)
-    
-    def detener(self):
-        """
-        Detiene el motor de voz
-        """
-        if self.engine:
-            self.engine.stop()
+        self.hablar("Inclina lentamente tu cabeza hacia el hombro derecho.")
+        time.sleep(3)
+        
+        self.hablar("Mantén cinco segundos.")
+        time.sleep(5)
+        
+        self.hablar("Regresa al centro.")
+        time.sleep(2)
+        
+        self.hablar("Ahora inclina hacia el hombro izquierdo.")
+        time.sleep(3)
+        
+        self.hablar("Mantén cinco segundos.")
+        time.sleep(5)
+        
+        self.hablar("Regresa al centro. Ejercicio completado.")
 
 # ========================================
 # PRUEBA DEL MÓDULO
@@ -145,13 +127,12 @@ class AsistenteVoz:
 
 if __name__ == "__main__":
     print("="*60)
-    print("PRUEBA DEL ASISTENTE DE VOZ")
+    print("PRUEBA DEL ASISTENTE DE VOZ - VERSIÓN ROBUSTA")
     print("="*60 + "\n")
     
-    asistente = AsistenteVoz()
+    asistente = AsistenteVozRobusto()
     
-    # Prueba de mensajes
-    print("\n1. Mensaje de bienvenida:")
+    print("1. Mensaje de bienvenida:")
     asistente.bienvenida()
     time.sleep(2)
     
@@ -159,14 +140,21 @@ if __name__ == "__main__":
     asistente.alerta_co2_alto(1250)
     time.sleep(2)
     
-    print("\n3. Alerta de fatiga visual:")
+    print("\n3. Alerta de ruido:")
+    asistente.alerta_ruido_alto(75)
+    time.sleep(2)
+    
+    print("\n4. Alerta de fatiga visual:")
     asistente.alerta_fatiga_visual()
     time.sleep(2)
     
-    print("\n4. Guía de ejercicio:")
+    print("\n5. Recordatorio de pausa:")
+    asistente.recordatorio_pausa(60)
+    time.sleep(2)
+    
+    print("\n6. Guía de ejercicio:")
     respuesta = input("\n¿Quieres probar la guía de ejercicio 20-20-20? (s/n): ")
     if respuesta.lower() == 's':
         asistente.guiar_ejercicio_20_20_20()
     
-    asistente.detener()
     print("\n✓ Prueba completada")
