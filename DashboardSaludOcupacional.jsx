@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Wind, Volume2, Eye, AlertCircle, CheckCircle } from 'lucide-react';
 
+const API_URL = 'http://localhost:3001';
+
 const DashboardSaludOcupacional = () => {
   // Estados para datos en tiempo real
   const [datosSensores, setDatosSensores] = useState({
@@ -30,22 +32,48 @@ const DashboardSaludOcupacional = () => {
     pausasTomadas: 0
   });
 
-  // Simular actualización de datos cada 5 segundos
-  useEffect(() => {
-    const intervalo = setInterval(() => {
-      // Simular cambios en sensores
-      setDatosSensores(prev => ({
-        co2: Math.max(400, Math.min(1500, prev.co2 + (Math.random() - 0.5) * 50)),
-        ruido: Math.max(30, Math.min(80, prev.ruido + (Math.random() - 0.5) * 10)),
-        temperatura: Math.max(20, Math.min(28, prev.temperatura + (Math.random() - 0.5) * 1))
-      }));
+  const [dispositivos, setDispositivos] = useState([]);
+  const [error, setError] = useState(null);
 
-      // Incrementar tiempo de sesión
-      setSesionActual(prev => ({
-        ...prev,
-        minutosTranscurridos: prev.minutosTranscurridos + 1
-      }));
-    }, 5000);
+  // Obtener datos del backend cada 5 segundos
+  useEffect(() => {
+    const fetchDatos = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/dashboard/datos-completos`);
+        const resultado = await response.json();
+
+        if (resultado.success) {
+          const { data } = resultado;
+          
+          setDatosSensores(data.datosSensores);
+          setEstadoFatiga(data.estadoFatiga);
+          setAlertasActivas(data.alertasActivas);
+          setEstadoActuadores(data.estadoActuadores);
+          setSesionActual(data.sesionActual);
+          setDispositivos(data.dispositivos);
+          setError(null);
+        } else {
+          // Si hay error pero devuelve datos por defecto
+          if (resultado.data) {
+            setDatosSensores(resultado.data.datosSensores);
+            setEstadoFatiga(resultado.data.estadoFatiga);
+            setAlertasActivas(resultado.data.alertasActivas || []);
+            setEstadoActuadores(resultado.data.estadoActuadores);
+            setSesionActual(resultado.data.sesionActual);
+          }
+          setError('Usando datos por defecto');
+        }
+      } catch (err) {
+        console.error('Error al obtener datos:', err);
+        setError('No se pudo conectar con el servidor');
+      }
+    };
+
+    // Llamada inicial
+    fetchDatos();
+
+    // Actualizar cada 5 segundos
+    const intervalo = setInterval(fetchDatos, 5000);
 
     return () => clearInterval(intervalo);
   }, []);
@@ -70,14 +98,39 @@ const DashboardSaludOcupacional = () => {
     return 'text-red-500';
   };
 
+  const getPrioridadColor = (prioridad) => {
+    if (prioridad === 'alta') return 'bg-red-50 border-red-500 text-red-800';
+    if (prioridad === 'media') return 'bg-yellow-50 border-yellow-500 text-yellow-800';
+    return 'bg-blue-50 border-blue-500 text-blue-800';
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       {/* Header */}
       <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">
-          🏥 Agente Inteligente - Salud Ocupacional
-        </h1>
-        <p className="text-gray-600">Sistema de monitoreo y optimización de ambiente laboral</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">
+              🏥 Agente Inteligente - Salud Ocupacional
+            </h1>
+            <p className="text-gray-600">Sistema de monitoreo y optimización de ambiente laboral</p>
+          </div>
+          <div className="text-right">
+            {error && (
+              <p className="text-red-500 text-sm mb-2">⚠️ {error}</p>
+            )}
+            {dispositivos.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${
+                  dispositivos[0].conectado ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+                }`}></div>
+                <span className="text-sm text-gray-600">
+                  {dispositivos[0].conectado ? 'ESP32 Conectado' : 'ESP32 Desconectado'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Sesión Actual */}
@@ -248,43 +301,23 @@ const DashboardSaludOcupacional = () => {
           <AlertCircle className="mr-2" /> Alertas Activas
         </h2>
         
-        {datosSensores.co2 > 1200 || datosSensores.ruido > 70 || sesionActual.minutosTranscurridos > 60 ? (
+        {alertasActivas.length > 0 ? (
           <div className="space-y-3">
-            {datosSensores.co2 > 1200 && (
-              <div className="flex items-start p-4 bg-red-50 border-l-4 border-red-500 rounded">
-                <AlertCircle className="text-red-500 mr-3 mt-1 flex-shrink-0" />
+            {alertasActivas.map((alerta) => (
+              <div 
+                key={alerta.id}
+                className={`flex items-start p-4 border-l-4 rounded ${getPrioridadColor(alerta.prioridad)}`}
+              >
+                <AlertCircle className="mr-3 mt-1 flex-shrink-0" />
                 <div>
-                  <p className="font-semibold text-red-800">CO₂ Crítico</p>
-                  <p className="text-sm text-red-700">
-                    Nivel de CO₂ en {Math.round(datosSensores.co2)} ppm. Ventilador activado automáticamente.
+                  <p className="font-semibold">{alerta.tipo_alerta}</p>
+                  <p className="text-sm">{alerta.mensaje}</p>
+                  <p className="text-xs mt-1 opacity-75">
+                    {new Date(alerta.timestamp).toLocaleTimeString('es-MX')}
                   </p>
                 </div>
               </div>
-            )}
-            
-            {datosSensores.ruido > 70 && (
-              <div className="flex items-start p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded">
-                <AlertCircle className="text-yellow-600 mr-3 mt-1 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-yellow-800">Ruido Elevado</p>
-                  <p className="text-sm text-yellow-700">
-                    Nivel de ruido en {Math.round(datosSensores.ruido)} dB. Considera usar audífonos.
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {sesionActual.minutosTranscurridos > 60 && (
-              <div className="flex items-start p-4 bg-orange-50 border-l-4 border-orange-500 rounded">
-                <AlertCircle className="text-orange-600 mr-3 mt-1 flex-shrink-0" />
-                <div>
-                  <p className="font-semibold text-orange-800">Pausa Recomendada</p>
-                  <p className="text-sm text-orange-700">
-                    Has trabajado {sesionActual.minutosTranscurridos} minutos sin pausa. Toma un descanso.
-                  </p>
-                </div>
-              </div>
-            )}
+            ))}
           </div>
         ) : (
           <div className="flex items-center p-4 bg-green-50 border-l-4 border-green-500 rounded">
@@ -305,17 +338,17 @@ const DashboardSaludOcupacional = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {/* Ventilador */}
           <div className="p-4 bg-gray-50 rounded-lg text-center">
-            <Wind className={`mx-auto mb-2 ${datosSensores.co2 > 1200 ? 'text-blue-500' : 'text-gray-400'}`} size={32} />
+            <Wind className={`mx-auto mb-2 ${estadoActuadores.ventilador === 'encendido' ? 'text-blue-500' : 'text-gray-400'}`} size={32} />
             <p className="font-semibold text-gray-700">Ventilador</p>
-            <p className={`text-sm ${datosSensores.co2 > 1200 ? 'text-blue-600' : 'text-gray-500'}`}>
-              {datosSensores.co2 > 1200 ? 'ENCENDIDO' : 'APAGADO'}
+            <p className={`text-sm ${estadoActuadores.ventilador === 'encendido' ? 'text-blue-600' : 'text-gray-500'}`}>
+              {estadoActuadores.ventilador.toUpperCase()}
             </p>
           </div>
 
           {/* LED Verde */}
           <div className="p-4 bg-gray-50 rounded-lg text-center">
             <div className={`w-8 h-8 rounded-full mx-auto mb-2 ${
-              datosSensores.co2 < 800 && datosSensores.ruido < 50 
+              estadoActuadores.ledVerde
                 ? 'bg-green-500 shadow-lg shadow-green-300' 
                 : 'bg-gray-300'
             }`}></div>
@@ -326,8 +359,7 @@ const DashboardSaludOcupacional = () => {
           {/* LED Amarillo */}
           <div className="p-4 bg-gray-50 rounded-lg text-center">
             <div className={`w-8 h-8 rounded-full mx-auto mb-2 ${
-              (datosSensores.co2 >= 800 && datosSensores.co2 < 1200) || 
-              (datosSensores.ruido >= 50 && datosSensores.ruido < 70)
+              estadoActuadores.ledAmarillo
                 ? 'bg-yellow-500 shadow-lg shadow-yellow-300' 
                 : 'bg-gray-300'
             }`}></div>
@@ -338,7 +370,7 @@ const DashboardSaludOcupacional = () => {
           {/* LED Rojo */}
           <div className="p-4 bg-gray-50 rounded-lg text-center">
             <div className={`w-8 h-8 rounded-full mx-auto mb-2 ${
-              datosSensores.co2 >= 1200 || datosSensores.ruido >= 70
+              estadoActuadores.ledRojo
                 ? 'bg-red-500 shadow-lg shadow-red-300 animate-pulse' 
                 : 'bg-gray-300'
             }`}></div>

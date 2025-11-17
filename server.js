@@ -386,6 +386,217 @@ app.post('/api/esp32/comando/enviar', async (req, res) => {
 });
 
 // ========================================
+// ENDPOINTS PARA DASHBOARD REACT (VISUALIZACIÓN)
+// ========================================
+
+// Endpoint principal: todos los datos en una sola petición
+app.get('/api/dashboard/datos-completos', async (req, res) => {
+  try {
+    // 1. Sesión actual
+    const [sesion] = await dbPool.query(`
+      SELECT 
+        id as sesion_id,
+        minutos_totales as minutosTranscurridos,
+        pausas_tomadas as pausasTomadas,
+        estado,
+        fecha,
+        hora_inicio
+      FROM sesiones_trabajo
+      WHERE estado = 'activa'
+      ORDER BY id DESC
+      LIMIT 1
+    `);
+
+    const sesionActual = sesion[0] || {
+      sesion_id: null,
+      minutosTranscurridos: 0,
+      pausasTomadas: 0,
+      estado: 'inactiva'
+    };
+
+    // 2. Últimas lecturas de sensores
+    const [lecturas] = await dbPool.query(`
+      SELECT tipo_sensor, valor, unidad, timestamp
+      FROM lecturas_sensores
+      WHERE sesion_id = ?
+      ORDER BY tipo_sensor, timestamp DESC
+    `, [sesionActual.sesion_id || sesionActual]);
+
+    const datosSensores = {
+      co2: 450,
+      ruido: 45,
+      temperatura: 23
+    };
+
+    lecturas.forEach(lectura => {
+      if (lectura.tipo_sensor === 'co2' && !datosSensores.co2_set) {
+        datosSensores.co2 = parseFloat(lectura.valor);
+        datosSensores.co2_set = true;
+      } else if (lectura.tipo_sensor === 'ruido' && !datosSensores.ruido_set) {
+        datosSensores.ruido = parseFloat(lectura.valor);
+        datosSensores.ruido_set = true;
+      } else if (lectura.tipo_sensor === 'temperatura' && !datosSensores.temperatura_set) {
+        datosSensores.temperatura = parseFloat(lectura.valor);
+        datosSensores.temperatura_set = true;
+      }
+    });
+
+    // Limpiar flags temporales
+    delete datosSensores.co2_set;
+    delete datosSensores.ruido_set;
+    delete datosSensores.temperatura_set;
+
+    // 3. Estado de fatiga actual
+    const [detecciones] = await dbPool.query(`
+      SELECT tipo_fatiga, nivel_fatiga, timestamp
+      FROM deteccion_fatiga
+      WHERE sesion_id = ?
+        AND timestamp > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+      ORDER BY tipo_fatiga, timestamp DESC
+    `, [sesionActual.sesion_id || sesionActual]);
+
+    const estadoFatiga = {
+      visual: 'bajo',
+      postural: 'bajo',
+      cognitiva: 'bajo'
+    };
+
+    detecciones.forEach(det => {
+      const tipo = det.tipo_fatiga;
+      if (!estadoFatiga[`${tipo}_set`]) {
+        estadoFatiga[tipo] = det.nivel_fatiga;
+        estadoFatiga[`${tipo}_set`] = true;
+      }
+    });
+
+    // Limpiar flags
+    delete estadoFatiga.visual_set;
+    delete estadoFatiga.postural_set;
+    delete estadoFatiga.cognitiva_set;
+
+    // 4. Alertas activas (últimas 5)
+    const [alertas] = await dbPool.query(`
+      SELECT 
+        id,
+        tipo_alerta,
+        prioridad,
+        mensaje,
+        timestamp
+      FROM alertas_generadas
+      WHERE sesion_id = ?
+        AND visualizada = FALSE
+        AND descartada = FALSE
+      ORDER BY 
+        CASE prioridad 
+          WHEN 'alta' THEN 1
+          WHEN 'media' THEN 2
+          WHEN 'baja' THEN 3
+        END,
+        timestamp DESC
+      LIMIT 5
+    `, [sesionActual.sesion_id || sesionActual]);
+
+    // 5. Estado de actuadores (basado en lecturas actuales)
+    const estadoActuadores = {
+      ventilador: datosSensores.co2 > 1200 ? 'encendido' : 'apagado',
+      ledVerde: datosSensores.co2 < 800 && datosSensores.ruido < 50,
+      ledAmarillo: (datosSensores.co2 >= 800 && datosSensores.co2 < 1200) || 
+                   (datosSensores.ruido >= 50 && datosSensores.ruido < 70),
+      ledRojo: datosSensores.co2 >= 1200 || datosSensores.ruido >= 70
+    };
+
+    // 6. Estado de dispositivos ESP32
+    const [dispositivos] = await dbPool.query(`
+      SELECT 
+        device_id, 
+        estado,
+        ultima_conexion,
+        TIMESTAMPDIFF(SECOND, ultima_conexion, NOW()) as segundos_inactivo
+      FROM dispositivos_esp32
+    `);
+
+    const estadoDispositivos = dispositivos.map(d => ({
+      device_id: d.device_id,
+      conectado: d.segundos_inactivo < 60,
+      ultima_conexion: d.ultima_conexion
+    }));
+
+    // Respuesta completa
+    res.json({
+      success: true,
+      timestamp: new Date(),
+      data: {
+        sesionActual: {
+          activa: sesionActual.estado === 'activa',
+          minutosTranscurridos: sesionActual.minutosTranscurridos,
+          pausasTomadas: sesionActual.pausasTomadas
+        },
+        datosSensores,
+        estadoFatiga,
+        alertasActivas: alertas,
+        estadoActuadores,
+        dispositivos: estadoDispositivos
+      }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo datos completos:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      data: {
+        sesionActual: { activa: false, minutosTranscurridos: 0, pausasTomadas: 0 },
+        datosSensores: { co2: 450, ruido: 45, temperatura: 23 },
+        estadoFatiga: { visual: 'bajo', postural: 'bajo', cognitiva: 'bajo' },
+        alertasActivas: [],
+        estadoActuadores: { ventilador: 'apagado', ledVerde: false, ledAmarillo: false, ledRojo: false },
+        dispositivos: []
+      }
+    });
+  }
+});
+
+// Endpoint alternativo: solo sensores (si quieres polling más frecuente)
+app.get('/api/dashboard/sensores', async (req, res) => {
+  try {
+    const [lecturas] = await dbPool.query(`
+      SELECT tipo_sensor, valor, unidad, timestamp
+      FROM lecturas_sensores
+      WHERE sesion_id = ?
+      ORDER BY tipo_sensor, timestamp DESC
+    `, [sesionActual]);
+
+    const datosSensores = {
+      co2: 450,
+      ruido: 45,
+      temperatura: 23
+    };
+
+    lecturas.forEach(lectura => {
+      if (lectura.tipo_sensor === 'co2' && !datosSensores.co2_set) {
+        datosSensores.co2 = parseFloat(lectura.valor);
+        datosSensores.co2_set = true;
+      } else if (lectura.tipo_sensor === 'ruido' && !datosSensores.ruido_set) {
+        datosSensores.ruido = parseFloat(lectura.valor);
+        datosSensores.ruido_set = true;
+      } else if (lectura.tipo_sensor === 'temperatura' && !datosSensores.temperatura_set) {
+        datosSensores.temperatura = parseFloat(lectura.valor);
+        datosSensores.temperatura_set = true;
+      }
+    });
+
+    delete datosSensores.co2_set;
+    delete datosSensores.ruido_set;
+    delete datosSensores.temperatura_set;
+
+    res.json({ success: true, datosSensores });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========================================
 // MANEJO DE ERRORES
 // ========================================
 
