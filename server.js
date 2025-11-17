@@ -1,6 +1,6 @@
 /**
  * API Backend - Sistema de Salud Ocupacional
- * VERSIÓN CON SIMULACIÓN DE SENSORES (Sin Arduino)
+ * VERSIÓN CON ESP32 REAL (Reemplaza simulación)
  */
 
 const express = require('express');
@@ -40,96 +40,15 @@ async function inicializarDB() {
   }
 }
 
-// ========================================
-// SIMULADOR DE SENSORES
-// ========================================
-
-class SimuladorSensores {
-  constructor() {
-    this.co2 = 450;
-    this.ruido = 45;
-    this.temperatura = 23;
-  }
-
-  simularLectura() {
-    // Simular variaciones naturales
-    this.co2 += (Math.random() - 0.5) * 30;
-    this.co2 = Math.max(400, Math.min(1500, this.co2));
-
-    this.ruido += (Math.random() - 0.5) * 5;
-    this.ruido = Math.max(35, Math.min(80, this.ruido));
-
-    this.temperatura += (Math.random() - 0.5) * 0.5;
-    this.temperatura = Math.max(20, Math.min(28, this.temperatura));
-
-    return {
-      co2: Math.round(this.co2),
-      ruido: Math.round(this.ruido),
-      temperatura: parseFloat(this.temperatura.toFixed(1))
-    };
-  }
-
-  // Simular condición crítica (para pruebas)
-  simularCO2Alto() {
-    this.co2 = 1250;
-  }
-
-  simularRuidoAlto() {
-    this.ruido = 75;
-  }
-}
-
-const simulador = new SimuladorSensores();
-
-// Iniciar simulación automática cada 10 segundos
+// Variable para sesión actual
 let sesionActual = 1;
-setInterval(async () => {
-  const lecturas = simulador.simularLectura();
-  
-  try {
-    // Guardar en base de datos
-    await dbPool.query(`
-      INSERT INTO lecturas_sensores (sesion_id, tipo_sensor, valor, unidad)
-      VALUES 
-        (?, 'co2', ?, 'ppm'),
-        (?, 'ruido', ?, 'dB'),
-        (?, 'temperatura', ?, '°C')
-    `, [
-      sesionActual, lecturas.co2,
-      sesionActual, lecturas.ruido,
-      sesionActual, lecturas.temperatura
-    ]);
 
-    console.log(`📊 Lecturas simuladas - CO2: ${lecturas.co2} ppm, Ruido: ${lecturas.ruido} dB, Temp: ${lecturas.temperatura}°C`);
+// ========================================
+// FUNCIONES AUXILIARES
+// ========================================
 
-    // Verificar condiciones y generar alertas
-    if (lecturas.co2 > 1200) {
-      await generarAlerta(sesionActual, 'co2_critico', 'alta', 
-        `CO₂ crítico: ${lecturas.co2} ppm. Ventilación necesaria.`);
-    }
-
-    if (lecturas.ruido > 70) {
-      await generarAlerta(sesionActual, 'ruido_alto', 'media',
-        `Nivel de ruido elevado: ${lecturas.ruido} dB`);
-    }
-
-    // Actualizar tiempo de sesión
-    await dbPool.query(`
-      UPDATE sesiones_trabajo 
-      SET minutos_totales = TIMESTAMPDIFF(MINUTE, 
-        CONCAT(fecha, ' ', hora_inicio), NOW())
-      WHERE id = ?
-    `, [sesionActual]);
-
-  } catch (error) {
-    console.error('Error en simulación:', error.message);
-  }
-}, 10000); // Cada 10 segundos
-
-// Función auxiliar para generar alertas
 async function generarAlerta(sesionId, tipo, prioridad, mensaje) {
   try {
-    // Verificar si ya existe alerta similar reciente
     const [alertas] = await dbPool.query(`
       SELECT id FROM alertas_generadas 
       WHERE sesion_id = ? AND tipo_alerta = ? 
@@ -150,16 +69,29 @@ async function generarAlerta(sesionId, tipo, prioridad, mensaje) {
   }
 }
 
+async function enviarComandoESP32(device_id, accion, parametro = '') {
+  try {
+    await dbPool.query(`
+      INSERT INTO comandos_esp32 (device_id, accion, parametro, estado)
+      VALUES (?, ?, ?, 'pendiente')
+    `, [device_id, accion, parametro]);
+    
+    console.log(`📤 Comando enviado a ${device_id}: ${accion}`);
+  } catch (error) {
+    console.error('Error enviando comando:', error);
+  }
+}
+
 // ========================================
 // RUTAS PRINCIPALES
 // ========================================
 
 app.get('/', (req, res) => {
   res.json({
-    message: '🏥 API de Salud Ocupacional - Modo Simulación',
+    message: '🏥 API de Salud Ocupacional - ESP32 Real',
     status: 'activo',
-    version: '1.0.0',
-    modo: 'simulacion_sin_arduino',
+    version: '2.0.0',
+    modo: 'esp32_real',
     endpoints: [
       'GET  /api/test',
       'GET  /api/sensores/ultimas',
@@ -167,8 +99,11 @@ app.get('/', (req, res) => {
       'POST /api/sesion/iniciar',
       'GET  /api/alertas/activas',
       'GET  /api/fatiga/actual',
-      'POST /api/simulador/co2-alto',
-      'POST /api/simulador/ruido-alto'
+      'POST /api/esp32/registrar',
+      'POST /api/esp32/lectura',
+      'GET  /api/esp32/comandos',
+      'POST /api/esp32/comando/confirmar',
+      'POST /api/esp32/comando/enviar'
     ]
   });
 });
@@ -187,7 +122,10 @@ app.get('/api/test', async (req, res) => {
   }
 });
 
-// Obtener últimas lecturas de sensores
+// ========================================
+// ENDPOINTS EXISTENTES
+// ========================================
+
 app.get('/api/sensores/ultimas', async (req, res) => {
   try {
     const [lecturas] = await dbPool.query(`
@@ -214,7 +152,6 @@ app.get('/api/sensores/ultimas', async (req, res) => {
   }
 });
 
-// Obtener sesión actual
 app.get('/api/sesion/actual', async (req, res) => {
   try {
     const [rows] = await dbPool.query(`
@@ -231,7 +168,6 @@ app.get('/api/sesion/actual', async (req, res) => {
   }
 });
 
-// Iniciar nueva sesión
 app.post('/api/sesion/iniciar', async (req, res) => {
   try {
     const [result] = await dbPool.query(`
@@ -251,7 +187,6 @@ app.post('/api/sesion/iniciar', async (req, res) => {
   }
 });
 
-// Obtener alertas activas
 app.get('/api/alertas/activas', async (req, res) => {
   try {
     const [alertas] = await dbPool.query(`
@@ -274,7 +209,6 @@ app.get('/api/alertas/activas', async (req, res) => {
   }
 });
 
-// Obtener estado de fatiga actual
 app.get('/api/fatiga/actual', async (req, res) => {
   try {
     const [detecciones] = await dbPool.query(`
@@ -304,27 +238,151 @@ app.get('/api/fatiga/actual', async (req, res) => {
 });
 
 // ========================================
-// ENDPOINTS PARA PRUEBAS DEL SIMULADOR
+// ENDPOINTS PARA ESP32
 // ========================================
 
-// Forzar CO2 alto (para demostración)
-app.post('/api/simulador/co2-alto', (req, res) => {
-  simulador.simularCO2Alto();
-  res.json({ 
-    success: true, 
-    message: 'CO2 elevado simulado',
-    nuevo_valor: simulador.co2 
-  });
+app.post('/api/esp32/registrar', async (req, res) => {
+  try {
+    const { device_id, tipo, sensores, actuadores } = req.body;
+    
+    const [existe] = await dbPool.query(
+      'SELECT id FROM dispositivos_esp32 WHERE device_id = ?',
+      [device_id]
+    );
+    
+    if (existe.length > 0) {
+      await dbPool.query(
+        'UPDATE dispositivos_esp32 SET ultima_conexion = NOW(), estado = "activo" WHERE device_id = ?',
+        [device_id]
+      );
+      
+      res.json({ 
+        success: true, 
+        message: 'Dispositivo reconectado',
+        device_id 
+      });
+      return;
+    }
+    
+    await dbPool.query(`
+      INSERT INTO dispositivos_esp32 (device_id, tipo, sensores, actuadores, estado)
+      VALUES (?, ?, ?, ?, 'activo')
+    `, [device_id, tipo, sensores, actuadores]);
+    
+    console.log(`✓ Dispositivo ESP32 registrado: ${device_id}`);
+    
+    res.json({ 
+      success: true, 
+      message: 'Dispositivo registrado correctamente',
+      device_id 
+    });
+    
+  } catch (error) {
+    console.error('Error registrando dispositivo:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
-// Forzar ruido alto (para demostración)
-app.post('/api/simulador/ruido-alto', (req, res) => {
-  simulador.simularRuidoAlto();
-  res.json({ 
-    success: true, 
-    message: 'Ruido elevado simulado',
-    nuevo_valor: simulador.ruido 
-  });
+app.post('/api/esp32/lectura', async (req, res) => {
+  try {
+    const { device_id, tipo_sensor, valor, unidad } = req.body;
+    
+    // Guardar lectura
+    await dbPool.query(`
+      INSERT INTO lecturas_sensores (sesion_id, tipo_sensor, valor, unidad)
+      VALUES (?, ?, ?, ?)
+    `, [sesionActual, tipo_sensor, valor, unidad]);
+    
+    console.log(`📊 Lectura ESP32 [${device_id}] - ${tipo_sensor}: ${valor} ${unidad}`);
+    
+    // Lógica de alertas automáticas
+    if (tipo_sensor === 'co2' && valor > 1200) {
+      await generarAlerta(sesionActual, 'co2_critico', 'alta', 
+        `CO₂ crítico: ${valor} ppm. Ventilación necesaria.`);
+      
+      // Activar ventilador automáticamente
+      await enviarComandoESP32(device_id, 'activar_ventilador', '');
+      await enviarComandoESP32(device_id, 'led_alerta', 'rojo');
+    } else if (tipo_sensor === 'co2' && valor < 1000) {
+      // Desactivar ventilador si CO2 está bien
+      await enviarComandoESP32(device_id, 'desactivar_ventilador', '');
+      await enviarComandoESP32(device_id, 'led_alerta', 'verde');
+    }
+    
+    // Actualizar tiempo de sesión
+    await dbPool.query(`
+      UPDATE sesiones_trabajo 
+      SET minutos_totales = TIMESTAMPDIFF(MINUTE, 
+        CONCAT(fecha, ' ', hora_inicio), NOW())
+      WHERE id = ?
+    `, [sesionActual]);
+    
+    res.json({ 
+      success: true, 
+      message: 'Lectura registrada',
+      valor_recibido: valor 
+    });
+    
+  } catch (error) {
+    console.error('Error procesando lectura:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/esp32/comandos', async (req, res) => {
+  try {
+    const { device_id } = req.query;
+    
+    const [comandos] = await dbPool.query(`
+      SELECT id, accion, parametro, timestamp
+      FROM comandos_esp32
+      WHERE device_id = ? AND estado = 'pendiente'
+      ORDER BY timestamp ASC
+    `, [device_id]);
+    
+    res.json({ 
+      success: true, 
+      comandos 
+    });
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/esp32/comando/confirmar', async (req, res) => {
+  try {
+    const { comando_id, device_id, estado } = req.body;
+    
+    await dbPool.query(`
+      UPDATE comandos_esp32 
+      SET estado = ?, ejecutado_at = NOW()
+      WHERE id = ? AND device_id = ?
+    `, [estado, comando_id, device_id]);
+    
+    console.log(`✓ Comando ${comando_id} confirmado por ${device_id}`);
+    
+    res.json({ success: true });
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/esp32/comando/enviar', async (req, res) => {
+  try {
+    const { device_id, accion, parametro } = req.body;
+    
+    await enviarComandoESP32(device_id, accion, parametro);
+    
+    res.json({ 
+      success: true, 
+      message: 'Comando encolado para envío'
+    });
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // ========================================
@@ -348,20 +406,17 @@ async function iniciarServidor() {
     
     app.listen(PORT, () => {
       console.log('\n' + '='.repeat(60));
-      console.log('🚀 SERVIDOR API INICIADO - MODO SIMULACIÓN');
+      console.log('🚀 SERVIDOR API INICIADO - ESP32 REAL');
       console.log('='.repeat(60));
       console.log(`📡 URL: http://localhost:${PORT}`);
-      console.log(`🎯 Simulación automática de sensores ACTIVA`);
-      console.log(`📊 Lecturas cada 10 segundos`);
+      console.log(`🎯 Esperando conexión de ESP32...`);
       console.log('='.repeat(60));
-      console.log('\nEndpoints disponibles:');
-      console.log('  GET  / (info del API)');
-      console.log('  GET  /api/test');
-      console.log('  GET  /api/sensores/ultimas');
-      console.log('  GET  /api/sesion/actual');
-      console.log('  GET  /api/alertas/activas');
-      console.log('  POST /api/simulador/co2-alto (forzar alerta)');
-      console.log('  POST /api/simulador/ruido-alto (forzar alerta)');
+      console.log('\nEndpoints ESP32:');
+      console.log('  POST /api/esp32/registrar');
+      console.log('  POST /api/esp32/lectura');
+      console.log('  GET  /api/esp32/comandos');
+      console.log('  POST /api/esp32/comando/confirmar');
+      console.log('  POST /api/esp32/comando/enviar');
       console.log('\n' + '='.repeat(60));
       console.log('Presiona Ctrl+C para detener\n');
     });

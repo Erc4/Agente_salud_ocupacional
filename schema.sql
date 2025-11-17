@@ -93,6 +93,38 @@ CREATE TABLE acciones_sistema (
 );
 
 -- ========================================
+-- TABLA DE DISPOSITIVOS ESP32
+-- ========================================
+CREATE TABLE IF NOT EXISTS dispositivos_esp32 (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    device_id VARCHAR(50) UNIQUE NOT NULL,
+    tipo VARCHAR(50) NOT NULL,
+    sensores TEXT,
+    actuadores TEXT,
+    estado ENUM('activo', 'inactivo', 'error') DEFAULT 'activo',
+    ultima_conexion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ========================================
+-- TABLA DE COMANDOS PARA ESP32
+-- ========================================
+CREATE TABLE IF NOT EXISTS comandos_esp32 (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    device_id VARCHAR(50) NOT NULL,
+    accion VARCHAR(50) NOT NULL,
+    parametro VARCHAR(100),
+    estado ENUM('pendiente', 'ejecutado', 'error') DEFAULT 'pendiente',
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ejecutado_at TIMESTAMP NULL,
+    FOREIGN KEY (device_id) REFERENCES dispositivos_esp32(device_id) ON DELETE CASCADE,
+    INDEX idx_device_estado (device_id, estado)
+);
+
+-- Insertar dispositivo de ejemplo
+INSERT INTO dispositivos_esp32 (device_id, tipo, sensores, actuadores) VALUES
+('ESP32_ESCRITORIO_01', 'sensor_actuador', 'MQ135', 'ventilador,leds');
+-- ========================================
 -- DATOS DE EJEMPLO
 -- ========================================
 
