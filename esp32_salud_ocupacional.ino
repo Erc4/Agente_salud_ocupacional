@@ -11,8 +11,8 @@
 // ========================================
 // CONFIGURACIÓN WiFi
 // ========================================
-const char* ssid = "TU_RED_WIFI";           // Cambiar por tu red
-const char* password = "TU_PASSWORD_WIFI";   // Cambiar por tu contraseña
+const char* ssid = "Eric";           // Cambiar por tu red
+const char* password = "Empanadis0";   // Cambiar por tu contraseña
 
 // ========================================
 // CONFIGURACIÓN API
