@@ -1,27 +1,55 @@
+% ========================================
 % BASE DE CONOCIMIENTO - SALUD OCUPACIONAL
+% VERSIÓN DINÁMICA CON ESTÁNDARES CONFIGURABLES
+% ========================================
 
+% ========================================
+% HECHOS DINÁMICOS (Cargados desde MySQL)
+% ========================================
 
-% HECHOS ESTÁTICOS (Estándares y Umbrales)
+% Estándares (cargados dinámicamente desde BD)
+:- dynamic(estandar_co2/3).
+:- dynamic(estandar_ruido/3).
+:- dynamic(estandar_temperatura/3).
+:- dynamic(umbral_usuario/3).
+:- dynamic(configuracion_contextual/2).
 
-% Estándares de calidad del aire (CO2 en ppm)
-estandar_co2(optimo, 400, 800).
-estandar_co2(aceptable, 801, 1000).
-estandar_co2(deficiente, 1001, 1500).
-estandar_co2(malo, 1501, 5000).
+% Estado actual del sistema
+:- dynamic(estado_actual/2).
+:- dynamic(sesion_trabajo/3).
+:- dynamic(lectura_sensor/3).
+:- dynamic(nivel_fatiga/2).
+:- dynamic(usuario_actual/1).
+:- dynamic(preferencia_usuario/3).
 
-% Estándares de nivel de ruido (dB)
-estandar_ruido(silencioso, 0, 40).
-estandar_ruido(tranquilo, 41, 50).
-estandar_ruido(moderado, 51, 65).
-estandar_ruido(ruidoso, 66, 85).
-estandar_ruido(muy_ruidoso, 86, 120).
+% Estados iniciales por defecto
+estado_actual(ventilador, apagado).
+estado_actual(alerta_activa, ninguna).
 
-% Estándares de temperatura ambiente (°C)
-estandar_temperatura(frio, 0, 18).
-estandar_temperatura(fresco, 19, 21).
-estandar_temperatura(optimo, 22, 24).
-estandar_temperatura(calido, 25, 27).
-estandar_temperatura(caluroso, 28, 40).
+% Sesión de trabajo: sesion_trabajo(ID, HoraInicio, MinutosTranscurridos)
+sesion_trabajo(1, '09:00:00', 0).
+
+% Lecturas de sensores: lectura_sensor(TipoSensor, Valor, Timestamp)
+lectura_sensor(co2, 450, '09:00:00').
+lectura_sensor(ruido, 45, '09:00:00').
+lectura_sensor(temperatura, 23, '09:00:00').
+
+% Nivel de fatiga: nivel_fatiga(TipoFatiga, Nivel)
+nivel_fatiga(visual, bajo).
+nivel_fatiga(postural, bajo).
+nivel_fatiga(cognitiva, bajo).
+
+% Usuario actual
+usuario_actual(1).
+
+% Preferencias por usuario
+preferencia_usuario(1, sensibilidad_alertas, media).
+preferencia_usuario(1, volumen_alertas, 70).
+preferencia_usuario(1, frecuencia_recordatorios, 60).
+
+% ========================================
+% HECHOS ESTÁTICOS (Lógica invariable)
+% ========================================
 
 % Indicadores de fatiga visual
 indicador_fatiga(parpadeo_frecuente, visual, moderado).
@@ -50,7 +78,7 @@ ejercicio(cognitiva, 'Respiracion profunda: 5 repeticiones', 2).
 ejercicio(general, 'Caminar 5 minutos', 5).
 ejercicio(general, 'Estiramiento completo de brazos', 1).
 
-% Umbrales personalizables por usuario
+% Umbrales por defecto (fallback si no hay personalizados)
 umbral_default(co2_critico, 1200).
 umbral_default(ruido_critico, 70).
 umbral_default(tiempo_max_sentado, 60).
@@ -79,46 +107,11 @@ mensaje_alerta(fatiga_detectada, 'Signos de fatiga detectados. Toma un descanso.
 mensaje_alerta(pausa_recomendada, 'Llevas mucho tiempo trabajando. Pausa recomendada.').
 mensaje_alerta(ejercicio_sugerido, 'Es momento de hacer ejercicios de estiramiento.').
 
+% ========================================
+% REGLAS DE INFERENCIA
+% ========================================
 
-% HECHOS DINÁMICOS (Estado actual del sistema)
-% Estos se actualizarán desde Python/MySQL
-
-:- dynamic(estado_actual/2).
-:- dynamic(sesion_trabajo/3).
-:- dynamic(lectura_sensor/3).
-:- dynamic(nivel_fatiga/2).
-:- dynamic(usuario_actual/1).
-:- dynamic(preferencia_usuario/3).
-
-% Estados iniciales por defecto
-estado_actual(ventilador, apagado).
-estado_actual(alerta_activa, ninguna).
-
-% Sesión de trabajo: sesion_trabajo(ID, HoraInicio, MinutosTranscurridos)
-sesion_trabajo(1, '09:00:00', 0).
-
-% Lecturas de sensores: lectura_sensor(TipoSensor, Valor, Timestamp)
-lectura_sensor(co2, 450, '09:00:00').
-lectura_sensor(ruido, 45, '09:00:00').
-lectura_sensor(temperatura, 23, '09:00:00').
-
-% Nivel de fatiga: nivel_fatiga(TipoFatiga, Nivel)
-nivel_fatiga(visual, bajo).
-nivel_fatiga(postural, bajo).
-nivel_fatiga(cognitiva, bajo).
-
-% Usuario actual
-usuario_actual(default).
-
-% Preferencias por usuario: preferencia_usuario(Usuario, Parametro, Valor)
-preferencia_usuario(default, sensibilidad_alertas, media).
-preferencia_usuario(default, volumen_alertas, 70).
-preferencia_usuario(default, frecuencia_recordatorios, 60).
-
-
-% REGLAS DE INFERENCIA (Mínimo 8 reglas)
-
-% REGLA 1: Evaluación de calidad del aire
+% REGLA 1: Evaluación de calidad del aire (usa estándares dinámicos)
 calidad_aire(Nivel) :-
     lectura_sensor(co2, CO2, _),
     estandar_co2(Nivel, Min, Max),
@@ -132,10 +125,17 @@ nivel_ruido(Nivel) :-
     Ruido >= Min,
     Ruido =< Max.
 
-% REGLA 3: Detección de condición crítica de CO2
+% REGLA 3: Detección de condición crítica de CO2 (usa umbral personalizado si existe)
 condicion_critica_co2 :-
     lectura_sensor(co2, CO2, _),
-    umbral_default(co2_critico, Umbral),
+    usuario_actual(Usuario),
+    (
+        % Primero intenta usar umbral personalizado
+        (umbral_usuario(Usuario, co2_critico, Umbral), !) 
+        ;
+        % Si no existe, usa umbral por defecto
+        umbral_default(co2_critico, Umbral)
+    ),
     CO2 >= Umbral.
 
 % REGLA 4: Necesidad de activar ventilador
@@ -180,9 +180,9 @@ necesita_intervencion_multiple :-
     fatiga_general_alta,
     requiere_pausa.
 
-
+% ========================================
 % REGLAS DE CONSULTA ÚTILES
-
+% ========================================
 
 % Obtener todas las acciones recomendadas actualmente
 acciones_recomendadas(Lista) :-
@@ -209,9 +209,29 @@ estado_sistema(Estado) :-
 sistema_en_alerta :-
     (condicion_critica_co2 ; fatiga_general_alta ; requiere_pausa).
 
-
+% ========================================
 % PREDICADOS AUXILIARES PARA ACTUALIZACIÓN
+% ========================================
 
+% Cargar estándar de CO2 desde Python
+cargar_estandar_co2(Nivel, Min, Max) :-
+    retractall(estandar_co2(Nivel, _, _)),
+    assertz(estandar_co2(Nivel, Min, Max)).
+
+% Cargar estándar de ruido desde Python
+cargar_estandar_ruido(Nivel, Min, Max) :-
+    retractall(estandar_ruido(Nivel, _, _)),
+    assertz(estandar_ruido(Nivel, Min, Max)).
+
+% Cargar estándar de temperatura desde Python
+cargar_estandar_temperatura(Nivel, Min, Max) :-
+    retractall(estandar_temperatura(Nivel, _, _)),
+    assertz(estandar_temperatura(Nivel, Min, Max)).
+
+% Cargar umbral personalizado de usuario
+cargar_umbral_usuario(Usuario, Parametro, Valor) :-
+    retractall(umbral_usuario(Usuario, Parametro, _)),
+    assertz(umbral_usuario(Usuario, Parametro, Valor)).
 
 % Actualizar lectura de sensor
 actualizar_sensor(Tipo, Valor, Timestamp) :-
@@ -233,3 +253,8 @@ actualizar_sesion(ID, Minutos) :-
     retractall(sesion_trabajo(ID, _, _)),
     sesion_trabajo(ID, Hora, _),
     assertz(sesion_trabajo(ID, Hora, Minutos)).
+
+% Establecer usuario actual
+establecer_usuario(Usuario) :-
+    retractall(usuario_actual(_)),
+    assertz(usuario_actual(Usuario)).

@@ -1,6 +1,7 @@
 """
 SISTEMA INTEGRADO DE SALUD OCUPACIONAL
 Integra detector de fatiga con cámara + asistente de voz + ESP32 REAL
+CON ESTÁNDARES DINÁMICOS
 """
 
 import threading
@@ -62,7 +63,7 @@ class SistemaSaludOcupacional:
         """
         print("="*60)
         print("SISTEMA INTEGRADO DE SALUD OCUPACIONAL")
-        print("Con ESP32 + Sensores Reales")
+        print("Con ESP32 + Sensores Reales + Estándares Dinámicos")
         print("="*60)
         
         # Inicializar componentes
@@ -124,7 +125,8 @@ class SistemaSaludOcupacional:
             cursor.close()
             conexion.close()
             
-            # Inicializar detector de fatiga
+            # Inicializar detector de fatiga (CON ESTÁNDARES DINÁMICOS)
+            print("\n📊 Inicializando detector con estándares dinámicos...")
             self.detector_fatiga = DetectorFatigaReal(self.db_config)
             self.detector_fatiga.establecer_sesion(sesion_id)
             
@@ -154,6 +156,7 @@ class SistemaSaludOcupacional:
             print("✓ Detección de fatiga por cámara: ACTIVA")
             print("✓ Monitor de CO2 (ESP32): ACTIVO")
             print("✓ Asistente de voz: ACTIVO")
+            print("✓ Estándares dinámicos: CARGADOS")
             print("="*60)
             print("Presiona 'q' en la ventana de la cámara para detener")
             print("="*60 + "\n")
@@ -184,6 +187,12 @@ class SistemaSaludOcupacional:
                 if co2 is not None and co2 != self.ultimo_co2:
                     self.ultimo_co2 = co2
                     print(f"📊 CO2: {co2} ppm")
+                    
+                    # Actualizar en Prolog para que las reglas puedan evaluarlo
+                    if self.detector_fatiga and self.detector_fatiga.prolog:
+                        timestamp = time.strftime('%H:%M:%S')
+                        query = f"actualizar_sensor(co2, {co2}, '{timestamp}')"
+                        list(self.detector_fatiga.prolog.query(query))
                     
                     # Generar alertas si es necesario
                     tiempo_actual = time.time()

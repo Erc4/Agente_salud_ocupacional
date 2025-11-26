@@ -8,6 +8,7 @@ import time
 import mysql.connector
 from datetime import datetime
 from pyswip import Prolog
+from cargador_estandares import CargadorEstandaresDinamico
 
 class DetectorFatigaReal:
     def __init__(self, db_config, archivo_prolog='salud_ocupacional.pl'):
@@ -22,9 +23,12 @@ class DetectorFatigaReal:
         
         # Inicializar Prolog
         try:
-            self.prolog = Prolog()
-            self.prolog.consult(archivo_prolog)
-            print("✓ Base de conocimiento Prolog cargada")
+            self.cargador_estandares = CargadorEstandaresDinamico(db_config, archivo_prolog)
+            self.cargador_estandares.cargar_estandares_globales()
+            self.cargador_estandares.cargar_umbrales_usuario(usuario_id=1)
+            
+            self.prolog = self.cargador_estandares.obtener_prolog()
+            print("✓ Base de conocimiento Prolog cargada con estándares dinámicos")
         except Exception as e:
             print(f"⚠️ Error cargando Prolog: {e}")
             self.prolog = None
