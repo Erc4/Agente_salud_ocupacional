@@ -193,6 +193,54 @@ class SistemaSaludOcupacional:
                         timestamp = time.strftime('%H:%M:%S')
                         query = f"actualizar_sensor(co2, {co2}, '{timestamp}')"
                         list(self.detector_fatiga.prolog.query(query))
+                        
+                        # NUEVO: Mostrar razonamiento de Prolog sobre CO2
+                        print("\n" + "="*60)
+                        print("[Prolog] === EVALUANDO CONDICIÓN CO2 ===")
+                        print("="*60)
+                        print(f"[Prolog] Hecho actualizado: lectura_sensor(co2, {co2}, '{timestamp}')")
+                        print(f"[Prolog] Consultando regla: condicion_critica_co2")
+                        
+                        # Obtener usuario actual y umbral
+                        usuario_query = list(self.detector_fatiga.prolog.query("usuario_actual(Usuario)"))
+                        if usuario_query:
+                            usuario_id = usuario_query[0]['Usuario']
+                            print(f"         Usuario actual: {usuario_id}")
+                            
+                            # Intentar obtener umbral personalizado
+                            umbral_query = list(self.detector_fatiga.prolog.query(
+                                f"umbral_usuario({usuario_id}, co2_critico, Umbral)"
+                            ))
+                            
+                            if umbral_query:
+                                umbral = umbral_query[0]['Umbral']
+                                print(f"         Umbral personalizado encontrado: {umbral} ppm")
+                            else:
+                                umbral_default_query = list(self.detector_fatiga.prolog.query(
+                                    "umbral_default(co2_critico, Umbral)"
+                                ))
+                                if umbral_default_query:
+                                    umbral = umbral_default_query[0]['Umbral']
+                                    print(f"         Usando umbral por defecto: {umbral} ppm")
+                            
+                            print(f"         Comparación: {co2} >= {umbral} ?")
+                        
+                        # Verificar si es crítico según Prolog
+                        resultado_critico = list(self.detector_fatiga.prolog.query("condicion_critica_co2"))
+                        
+                        if len(resultado_critico) > 0:
+                            print("⚠️  [Prolog] INFERENCIA: condicion_critica_co2 → VERDADERO")
+                            print("         Conclusión: Nivel de CO2 crítico detectado")
+                            print("         Ejecutando: accion_correctiva(co2_alto, activar_ventilador, automatica)")
+                            print("="*60)
+                            print("[Prolog] === FIN EVALUACIÓN ===")
+                            print("="*60 + "\n")
+                        else:
+                            print("✓  [Prolog] INFERENCIA: condicion_critica_co2 → FALSO")
+                            print("         Conclusión: Nivel de CO2 dentro de rangos aceptables")
+                            print("="*60)
+                            print("[Prolog] === FIN EVALUACIÓN ===")
+                            print("="*60 + "\n")
                     
                     # Generar alertas si es necesario
                     tiempo_actual = time.time()
@@ -246,7 +294,7 @@ class SistemaSaludOcupacional:
                 
                 # Agregar info de CO2
                 cv2.putText(frame_anotado, f"CO2: {self.ultimo_co2} ppm", 
-                           (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                        (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                 
                 # Mostrar frame
                 cv2.imshow('Monitor de Fatiga - Salud Ocupacional', frame_anotado)

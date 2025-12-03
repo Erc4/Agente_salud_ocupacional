@@ -196,21 +196,27 @@ class DetectorFatigaReal:
             return
         
         try:
+            print("\n[Prolog] === INICIO RAZONAMIENTO ===")
             # Actualizar fatiga visual
+            print(f"[Prolog] Actualizando: nivel_fatiga(visual, {nivel_visual})")
             list(self.prolog.query("retractall(nivel_fatiga(visual, _))"))
             list(self.prolog.query(f"assertz(nivel_fatiga(visual, {nivel_visual}))"))
             
             # Actualizar fatiga postural
+            print(f"[Prolog] Actualizando: nivel_fatiga(postural, {nivel_postural})")
             list(self.prolog.query("retractall(nivel_fatiga(postural, _))"))
             list(self.prolog.query(f"assertz(nivel_fatiga(postural, {nivel_postural}))"))
             
-            print(f"Prolog actualizado - Visual: {nivel_visual}, Postural: {nivel_postural}")
-            
             # Consultar si hay fatiga general alta
+            print(f"[Prolog] Consultando: fatiga_general_alta")
             resultado = list(self.prolog.query("fatiga_general_alta"))
             if len(resultado) > 0:
-                print("⚠️ Prolog detectó: FATIGA GENERAL ALTA")
+                print("⚠️ [Prolog] INFERENCIA: fatiga_general_alta → VERDADERO")
+                print("[Prolog] === FIN RAZONAMIENTO ===\n")
                 return True
+            else:
+                print("✓ [Prolog] INFERENCIA: fatiga_general_alta → FALSO")
+                print("[Prolog] === FIN RAZONAMIENTO ===\n")
             
         except Exception as e:
             print(f"❌ Error actualizando Prolog: {e}")
